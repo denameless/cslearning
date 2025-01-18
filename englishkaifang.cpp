@@ -1,3 +1,5 @@
+/*数据结构大作业，基于哈希表的关键词上下文查找。文本从txt文件中提取，也可以输入新文章。
+目前只实现了英文部分，且尚有许多不足之处*/
 #include <iostream>
 #include <fstream>
 #include <sstream>
