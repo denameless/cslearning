@@ -1,8 +1,6 @@
 clear; clc;
 format long;
 
-%% 定义函数和精确值
-% 使用一个独立的局部函数 f_integrand 来正确处理 x=0 的情况
 f = @f_integrand; 
 I_exact = -4/9; % 积分的精确值
 
@@ -25,13 +23,11 @@ fprintf('-----------------------------------------------------------------------
 for i = 1:length(n_vals)
     n = n_vals(i);
     h = h_vals(i);
-    x = linspace(a, b, n+1);
-    y = f(x);
-    
-    T_results(i) = h/2 * (y(1) + 2*sum(y(2:end-1)) + y(end));
+
+    T_results(i) = trpzds(f, a, b, n);
+    S_results(i) = Smpsns(f, a, b, n);
+
     T_errors(i) = abs(T_results(i) - I_exact);
-    
-    S_results(i) = h/3 * (y(1) + 4*sum(y(2:2:end-1)) + 2*sum(y(3:2:end-2)) + y(end));
     S_errors(i) = abs(S_results(i) - I_exact);
     
     fprintf('%5d   %.6f   %.12f   %.12f   %.4e   %.4e\n', ...
@@ -50,50 +46,22 @@ title('误差 vs. 步长 h (双对数坐标)');
 legend('Location', 'southeast');
 set(gca, 'XDir','reverse');
 
-fprintf('\n关于最小h的讨论:\n');
-fprintf('... (解释与之前相同) ...\n\n');
-
 %  问题 (2): 龙贝格(Romberg)求积
 
-max_k = 8;
-R = zeros(max_k, max_k);
+tol_romberg = 1e-12; % 设置精度目标
+max_k = 8;           % 最大迭代次数，对应 Rmbrg 的参数 K
 
-h = b - a;
-R(1, 1) = h/2 * (f(a) + f(b));
-for k = 2:max_k
-    h = h / 2;
-    sum_f = sum(f(a + (1:2^(k-2))*2*h - h));
-    R(k, 1) = 0.5 * R(k-1, 1) + h * sum_f;
-end
+[romberg_result, R, ~, ~] = Rmbrg(f, a, b, tol_romberg, max_k);
 
-for j = 2:max_k
-    for k = j:max_k
-        R(k, j) = (4^(j-1) * R(k, j-1) - R(k-1, j-1)) / (4^(j-1) - 1);
-    end
-end
-
-fprintf('龙贝格求积表 R(k,j):\n');
-disp(R);
-
-romberg_result = R(max_k, max_k);
 romberg_error = abs(romberg_result - I_exact);
+
+fprintf('\n龙贝格求积表 R(k,j):\n');
+disp(R);
 
 fprintf('\n龙贝格积分最终结果: %.12f\n', romberg_result);
 fprintf('龙贝格积分绝对误差: %.4e\n', romberg_error);
 
-%  问题 (3): 自适应辛普森法
-
-tol = 1e-4;
-[adaptive_S_result, node_count] = adaptive_simpson_main(f, a, b, tol);
-adaptive_S_error = abs(adaptive_S_result - I_exact);
-
-fprintf('目标精度 tol = %.1e\n', tol);
-fprintf('自适应辛普森法结果: %.12f\n', adaptive_S_result);
-fprintf('最终使用的函数求值次数: %d\n', node_count);
-fprintf('自适应辛普森法误差: %.4e\n', adaptive_S_error);
-fprintf('误差 %.4e 小于目标精度 %.1e，任务完成。\n', adaptive_S_error, tol);
-
-%  局部函数定义 (Local Functions)
+%  局部函数定义
 
 function y = f_integrand(x)
     y = zeros(size(x)); % 初始化输出为0
@@ -103,35 +71,38 @@ function y = f_integrand(x)
     y(idx) = sqrt(x(idx)) .* log(x(idx));
 end
 
-function [I, count] = adaptive_simpson_main(f, a, b, tol)
-    % 主函数，调用递归函数
-    c = (a + b) / 2;
-    fa = f(a); fc = f(c); fb = f(b);
-    count = 3; % 初始计算了3个点
-    [I, count_recursive] = adaptive_simpson_recursive(f, a, b, tol, fa, fc, fb);
-    count = count + count_recursive;
+function INTf=Smpsns(f,a,b,N,varargin)
+if nargin<4, N=100; end
+if abs(b-a)<1e-12|N<=0, INTf=0; return; end
+if mod(N,2)~=0, N=N+1; end 
+h=(b-a)/N; x=a+[0:N]*h; 
+fx=feval(f,x,varargin{:}); 
+fx(find(fx==inf))=realmax; fx(find(fx==-inf))=-realmax;
+kodd=2:2:N; keven=3:2:N-1; 
+INTf=h/3*(fx(1)+fx(N+1)+4*sum(fx(kodd))+2*sum(fx(keven)));
 end
 
-function [I, count] = adaptive_simpson_recursive(f, a, b, tol, fa, fc, fb)
-    % 递归函数
-    c = (a + b) / 2;
-    h = b - a;
-    S1 = h/6 * (fa + 4*fc + fb);
-    
-    d = (a + c) / 2;
-    e = (c + b) / 2;
-    fd = f(d); 
-    fe = f(e);
-    count = 2; % 本次调用新计算了2个点
+function INTf=trpzds(f,a,b,N)
+if abs(b-a)<eps|N<=0, INTf=0; return; end
+h=(b-a)/N; x=a+[0:N]*h; fx=feval(f,x); 
+INTf=h*((fx(1)+fx(N+1))/2+sum(fx(2:N))); 
+end
 
-    S2 = (h/12) * (fa + 4*fd + 2*fc + 4*fe + fb);
-    
-    if abs(S2 - S1) / 15 < tol
-        I = S2 + (S2 - S1)/15; 
-    else
-        [I_left, count_left] = adaptive_simpson_recursive(f, a, c, tol/2, fa, fd, fc);
-        [I_right, count_right] = adaptive_simpson_recursive(f, c, b, tol/2, fc, fe, fb);
-        I = I_left + I_right;
-        count = count + count_left + count_right;
-    end
+function [x,R,err,N]=Rmbrg(f,a,b,tol,K)
+%construct Romberg table to find definite integral of f over [a,b]
+h=b-a; N=1;
+if nargin<5, K=10; end
+R(1,1)=h/2*(feval(f,a)+feval(f,b));
+for k=2:K
+h=h/2; N=N*2;
+R(k,1)=R(k-1,1)/2 +h*sum(feval(f,a+[1:2:N-1]*h)); %Eq.(5.7.1)
+tmp=1;
+for n=2:k
+tmp= tmp*4;
+R(k,n)= (tmp*R(k,n-1)-R(k-1,n-1))/(tmp-1); %Eq.(5.7.3)
+end
+err= abs(R(k,k-1)-R(k-1,k-1))/(tmp-1); %Eq.(5.7.4)
+if err<tol, break; end
+end
+x=R(k,k);
 end
