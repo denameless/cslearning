@@ -21,7 +21,7 @@ y = L \ (P * b);
 x_lu = U \ y;
 
 % 计算行列式: det(A) = det(P')*det(L)*det(U)
-% det(P') = det(P), det(L) = 1 (单位下三角)
+
 detA_lu = det(P) * prod(diag(U));
 
 disp('LU 分解得到的矩阵 L:');
@@ -60,39 +60,21 @@ fprintf('两种方法得到的 det(A) 的差: %e\n\n', abs(detA_lu - detA_gauss)
 % 局部函数
 
 function [L,U,P] = lu_dcmp(A)
-    % This gives LU decomposition of A with the permutation matrix P
-    % denoting the row switch(exchange) during factorization
-    NA = size(A,1);
-    AP = [A eye(NA)]; %augment with the permutation matrix.
-    for k = 1:NA - 1
-        %Partial Pivoting at AP(k,k)
-        [akx, kx] = max(abs(AP(k:NA,k)));
-        if akx < eps
-            error('Singular matrix and No LU decomposition')
-        end
-        mx = k+kx-1;
-        if kx > 1 % Row change if necessary
-            tmp_row = AP(k,:);
-            AP(k,:) = AP(mx,:);
-            AP(mx,:) = tmp_row;
-        end
-        % LU decomposition
-        for m = k + 1: NA
-            AP(m,k) = AP(m,k)/AP(k,k); %Eq.(2.4.8.2)
-            AP(m,k+1:NA) = AP(m,k + 1:NA)-AP(m,k)*AP(k,k + 1:NA); %Eq.(2.4.9)
-        end
-    end
-    P = AP(1:NA, NA + 1:NA + NA); %Permutation matrix
-    L = zeros(NA);
+    NA = size(A, 1);
+    L = eye(NA);
     U = zeros(NA);
-    for m = 1:NA
-        for n = 1:NA
-            if m == n, L(m,m) = 1.; U(m,m) = AP(m,m);
-            elseif m > n, L(m,n) = AP(m,n); U(m,n) = 0.;
-            else, L(m,n) = 0.; U(m,n) = AP(m,n);
-            end
+    for k = 1:NA
+        for j = k:NA
+            U(k,j) = A(k,j) - L(k, 1:k-1) * U(1:k-1, j);
+        end
+        if abs(U(k,k)) < eps
+            error('主元为零，分解失败');
+        end
+        for i = k+1:NA
+            L(i,k) = (A(i,k) - L(i, 1:k-1) * U(1:k-1, k)) / U(k,k);
         end
     end
+    P = eye(NA);
 end
 
 function [x, p_order] = gauss_with_pivot_tracking(A,B)
@@ -108,8 +90,7 @@ function [x, p_order] = gauss_with_pivot_tracking(A,B)
     
     for k = 1:NA
         %Scaled Partial Pivoting at AB(k,k) by Eq.(2.2.20)
-        [~,kx] = max(abs(AB(k:NA,k))./ ...
-        max(abs([AB(k:NA, k + 1:NA) epss(1:NA - k + 1)]'))');
+        [~,kx] = max(abs(AB(k:NA,k)));
         if abs(AB(k+kx-1, k)) < eps, error('Singular matrix and No unique solution'); end
         mx = k + kx - 1;
         if kx > 1 % Row change if necessary
